@@ -1,4 +1,5 @@
 import set from 'lodash/set';
+import * as iconv from 'iconv-lite';
 import type {
 	IBinaryKeyData,
 	IDataObject,
@@ -48,7 +49,75 @@ function toText<T>(data: T) {
 	if (typeof data === 'object' && data !== null) {
 		return JSON.stringify(data);
 	}
-	return data;
+	return String(data);
+}
+
+/**
+ * Detect charset from Content-Type header
+ */
+function detectCharsetFromContentType(contentType: string): string | null {
+	const charsetMatch = contentType.match(/charset=([^;,\s"']+)/i);
+	if (!charsetMatch) return null;
+
+	let charset = charsetMatch[1].toLowerCase().replace(/['"]/g, '');
+
+	// Handle common charset aliases
+	const charsetAliases: Record<string, string> = {
+		gb2312: 'gb2312',
+		gbk: 'gbk',
+		gb18030: 'gb18030',
+		big5: 'big5',
+		shift_jis: 'shift_jis',
+		shiftjis: 'shift_jis',
+		'shift-jis': 'shift_jis',
+		'euc-kr': 'euc-kr',
+		euckr: 'euc-kr',
+		'iso-8859-1': 'iso-8859-1',
+		latin1: 'iso-8859-1',
+		'windows-1252': 'windows-1252',
+		cp1252: 'windows-1252',
+		'utf-8': 'utf8',
+		utf8: 'utf8',
+	};
+
+	return charsetAliases[charset] || charset;
+}
+
+/**
+ * Convert buffer to string using the specified encoding
+ */
+function decodeResponseText(
+	buffer: Buffer | Readable,
+	encoding: string,
+	contentType?: string,
+): string {
+	// Handle stream by converting to buffer first
+	if (buffer && typeof buffer === 'object' && 'readable' in buffer) {
+		// For streams, we'll let the existing binaryToString handle it and apply encoding if needed
+		return buffer.toString();
+	}
+
+	// Auto-detect encoding if specified
+	if (encoding === 'auto') {
+		// First try to detect from Content-Type header
+		if (contentType) {
+			const detectedCharset = detectCharsetFromContentType(contentType);
+			if (detectedCharset && iconv.encodingExists(detectedCharset)) {
+				return iconv.decode(buffer as Buffer, detectedCharset);
+			}
+		}
+
+		// Fallback to UTF-8 for auto-detection
+		encoding = 'utf8';
+	}
+
+	// Use iconv-lite for non-UTF8 encodings
+	if (encoding !== 'utf8' && iconv.encodingExists(encoding)) {
+		return iconv.decode(buffer as Buffer, encoding);
+	}
+
+	// Fallback to UTF-8
+	return (buffer as Buffer).toString('utf8');
 }
 export class HttpRequestV3 implements INodeType {
 	description: INodeTypeDescription;
@@ -884,6 +953,12 @@ export class HttpRequestV3 implements INodeType {
 					false,
 				) as boolean;
 
+				const responseEncoding = this.getNodeParameter(
+					'options.response.response.responseEncoding',
+					0,
+					'auto',
+				) as string;
+
 				// eslint-disable-next-line prefer-const
 				for (let [index, response] of Object.entries(responses)) {
 					if (response?.request?.constructor.name === 'ClientRequest') delete response.request;
@@ -911,7 +986,20 @@ export class HttpRequestV3 implements INodeType {
 									false,
 								) as boolean;
 
-								const data = await this.helpers.binaryToString(response.body as Buffer | Readable);
+								let data: string;
+								if (response.body instanceof Buffer) {
+									data = decodeResponseText(response.body, responseEncoding, responseContentType);
+								} else {
+									data = await this.helpers.binaryToString(response.body as Buffer | Readable);
+									// If we got a Buffer from binaryToString, apply encoding
+									if (responseEncoding !== 'auto' && responseEncoding !== 'utf8') {
+										data = decodeResponseText(
+											Buffer.from(data, 'utf8'),
+											responseEncoding,
+											responseContentType,
+										);
+									}
+								}
 								response.body = jsonParse(data, {
 									...(neverError
 										? { fallbackValue: {} }
@@ -923,7 +1011,20 @@ export class HttpRequestV3 implements INodeType {
 						} else {
 							responseFormat = 'text';
 							if (!response.__bodyResolved) {
-								const data = await this.helpers.binaryToString(response.body as Buffer | Readable);
+								let data: string;
+								if (response.body instanceof Buffer) {
+									data = decodeResponseText(response.body, responseEncoding, responseContentType);
+								} else {
+									data = await this.helpers.binaryToString(response.body as Buffer | Readable);
+									// If we got a Buffer from binaryToString, apply encoding
+									if (responseEncoding !== 'auto' && responseEncoding !== 'utf8') {
+										data = decodeResponseText(
+											Buffer.from(data, 'utf8'),
+											responseEncoding,
+											responseContentType,
+										);
+									}
+								}
 								response.body = !data ? undefined : data;
 							}
 						}

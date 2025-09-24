@@ -920,6 +920,56 @@ export const mainProperties: INodeProperties[] = [
 								description:
 									'Name of the binary property to which to write the data of the read file',
 							},
+							{
+								displayName: 'Response Encoding',
+								name: 'responseEncoding',
+								type: 'options',
+								options: [
+									{
+										name: 'Auto-Detect',
+										value: 'auto',
+									},
+									{
+										name: 'UTF-8',
+										value: 'utf8',
+									},
+									{
+										name: 'GB2312 (Chinese Simplified)',
+										value: 'gb2312',
+									},
+									{
+										name: 'GBK (Chinese Extended)',
+										value: 'gbk',
+									},
+									{
+										name: 'Big5 (Chinese Traditional)',
+										value: 'big5',
+									},
+									{
+										name: 'Shift-JIS (Japanese)',
+										value: 'shift_jis',
+									},
+									{
+										name: 'EUC-KR (Korean)',
+										value: 'euc-kr',
+									},
+									{
+										name: 'ISO-8859-1 (Latin-1)',
+										value: 'iso-8859-1',
+									},
+									{
+										name: 'Windows-1252',
+										value: 'windows-1252',
+									},
+								],
+								default: 'auto',
+								displayOptions: {
+									show: {
+										responseFormat: ['autodetect', 'text'],
+									},
+								},
+								description: 'The character encoding to use when decoding the response text',
+							},
 						],
 					},
 				],
